@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using TheCleaner.Core;
 
@@ -22,7 +21,10 @@ public partial class MainWindow : Window
 
     public MainWindow(CommandLineArgs startup)
     {
-        AvaloniaXamlLoader.Load(this);
+        // Must be InitializeComponent, not AvaloniaXamlLoader.Load: the generated method
+        // also assigns the x:Name fields. Loading the XAML alone compiles fine and leaves
+        // every named control null.
+        InitializeComponent();
         _startup = startup;
         _service = new CleanerService(PlatformBackend.Create());
 
@@ -38,7 +40,20 @@ public partial class MainWindow : Window
     private async void OnOpened(object? sender, EventArgs e)
     {
         Opened -= OnOpened;
-        if (_startup.HasPaths) await ScanAndShowAsync(_startup.Paths);
+        if (!_startup.HasPaths) return;
+
+        await ScanAndShowAsync(_startup.Paths);
+
+        // An elevated relaunch is the continuation of a run the user already confirmed
+        // and then approved at the UAC prompt, so it proceeds without asking again.
+        // Nothing else skips the confirm — a plain shell invocation carrying the same
+        // flags still stops here.
+        if (_startup.Elevated
+            && _startup.DeleteAfterUnlock is { } deleteAfter
+            && ConfirmPanel.IsVisible)
+        {
+            await RunAsync(deleteAfter);
+        }
     }
 
     // ---- drag and drop ----------------------------------------------------

@@ -1,6 +1,6 @@
 using TheCleaner;
 
-namespace TheCleaner.App.Tests;
+namespace TheCleaner.AppTests;
 
 public class CommandLineTests
 {
