@@ -3,6 +3,7 @@
         xmlns:local="clr-namespace:TheCleaner"
         x:Class="TheCleaner.MainWindow"
         Title="thecleaner"
+        Icon="/Assets/cleaner.png"
         Width="720" Height="520"
         MinWidth="520" MinHeight="400"
         WindowStartupLocation="CenterScreen">

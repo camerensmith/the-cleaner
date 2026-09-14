@@ -6,6 +6,9 @@
     <RootNamespace>TheCleaner</RootNamespace>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Icon shown by Explorer and by a pinned taskbar shortcut: baked into the exe's
+         Win32 resources. The window/running-taskbar icon comes from the PNG below. -->
+    <ApplicationIcon>..\..\assets\cleaner.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- A genuine single file: the Skia/ANGLE natives go inside the exe. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -44,6 +47,12 @@
                       Condition="'$(CleanerPlatform)' == 'linux'" />
     <ProjectReference Include="..\TheCleaner.Mac\TheCleaner.Mac.csproj"
                       Condition="'$(CleanerPlatform)' == 'mac'" />
+  </ItemGroup>
+
+  <!-- Linked rather than copied, so the repo keeps one canonical copy of the artwork.
+       Link sets the resource path, making the runtime URI /Assets/cleaner.png. -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\assets\cleaner.png" Link="Assets/cleaner.png" />
   </ItemGroup>
 
   <ItemGroup>

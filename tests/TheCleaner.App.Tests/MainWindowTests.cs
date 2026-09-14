@@ -61,6 +61,16 @@ public class MainWindowTests
     }
 
     [AvaloniaFact]
+    public void The_window_carries_the_cleaner_icon()
+    {
+        // A bad resource URI leaves Icon null and only shows up as a blank taskbar
+        // button at runtime, so assert the resource actually resolved.
+        var window = new MainWindow(CommandLineArgs.Parse([]));
+
+        Assert.NotNull(window.Icon);
+    }
+
+    [AvaloniaFact]
     public void A_refused_volume_root_reports_a_failure_instead_of_crashing()
     {
         // The exact startup path that crashed the published exe: argv targets drive a

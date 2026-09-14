@@ -72,6 +72,27 @@ form — and only that form — proceeds without re-confirming, because the user
 confirmed before the UAC prompt. The same flags without `--elevated` still stop at the
 confirm view.
 
+## Icon
+
+Two different icons come from the same artwork, `assets/cleaner.png`:
+
+| Where | Source | Wired up in |
+|---|---|---|
+| Explorer, pinned taskbar shortcut, Alt-Tab | `assets/cleaner.ico` embedded in the exe | `<ApplicationIcon>` in `TheCleaner.csproj` |
+| Title bar, running taskbar button | `assets/cleaner.png` as an Avalonia resource | `Icon="/Assets/cleaner.png"` in `MainWindow.axaml` |
+
+`cleaner.ico` is generated and committed. If the artwork changes, regenerate it:
+
+```
+powershell -File tools/make-ico.ps1 -Source assets/cleaner.png -Destination assets/cleaner.ico
+```
+
+It trims the transparent padding so the art fills the frame, then writes 16/24/32/48/64
+as 32-bit BMP entries and 128/256 as PNG entries — the layout Windows expects.
+
+Windows caches exe icons aggressively. If a rebuilt exe still shows the old icon in
+Explorer, it is the shell cache, not the build — rename the file or run `ie4uinit -show`.
+
 ## Platforms
 
 Windows is the v1 backend. Linux and macOS compile as stubs that report
