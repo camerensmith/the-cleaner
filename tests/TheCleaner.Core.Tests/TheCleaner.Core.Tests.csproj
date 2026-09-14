@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TheCleaner.Core\TheCleaner.Core.csproj" />
+    <ProjectReference Include="..\..\src\TheCleaner.Linux\TheCleaner.Linux.csproj" />
+    <ProjectReference Include="..\..\src\TheCleaner.Mac\TheCleaner.Mac.csproj" />
   </ItemGroup>
 
 </Project>
