@@ -1,0 +1,98 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TheCleaner"
+        x:Class="TheCleaner.MainWindow"
+        Title="thecleaner"
+        Width="720" Height="520"
+        MinWidth="520" MinHeight="400"
+        WindowStartupLocation="CenterScreen">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+      <TextBlock Text="thecleaner" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock x:Name="SubtitleText"
+                 Text="Drop a file or folder to see what is holding it."
+                 Opacity="0.7" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <!-- Idle: drop zone -->
+    <Border x:Name="IdlePanel" Grid.Row="1"
+            BorderThickness="2" BorderBrush="#55FFFFFF" CornerRadius="8"
+            Background="#11FFFFFF">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+        <TextBlock Text="Drop files or folders here"
+                   FontSize="16" HorizontalAlignment="Center" Opacity="0.8" />
+        <TextBlock Text="or drag them onto thecleaner.exe"
+                   HorizontalAlignment="Center" Opacity="0.5" />
+      </StackPanel>
+    </Border>
+
+    <!-- Busy -->
+    <StackPanel x:Name="BusyPanel" Grid.Row="1" IsVisible="False"
+                HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+      <ProgressBar IsIndeterminate="True" Width="240" />
+      <TextBlock x:Name="BusyText" Text="Scanning…" HorizontalAlignment="Center" Opacity="0.8" />
+    </StackPanel>
+
+    <!-- Confirm -->
+    <Grid x:Name="ConfirmPanel" Grid.Row="1" IsVisible="False"
+          RowDefinitions="Auto,Auto,Auto,*">
+      <TextBlock Grid.Row="0" x:Name="TargetText"
+                 FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
+      <TextBlock Grid.Row="1" x:Name="CountText" Opacity="0.7" Margin="0,0,0,8" />
+      <Border Grid.Row="2" Background="#33FF6B4A" CornerRadius="6"
+              Padding="12,8" Margin="0,0,0,12">
+        <TextBlock x:Name="WarningText" TextWrapping="Wrap"
+                   Text="Open handles will be closed and every locking process listed below will be terminated. Unsaved work in those processes will be lost." />
+      </Border>
+      <Border Grid.Row="3" BorderThickness="1" BorderBrush="#33FFFFFF" CornerRadius="6">
+        <ListBox x:Name="HolderList" Background="Transparent" BorderThickness="0">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="local:ListRow">
+              <StackPanel Margin="4,2">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="12"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Grid>
+
+    <!-- Results -->
+    <Grid x:Name="ResultsPanel" Grid.Row="1" IsVisible="False" RowDefinitions="Auto,*,Auto">
+      <TextBlock Grid.Row="0" x:Name="SummaryText"
+                 FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
+      <Border Grid.Row="1" BorderThickness="1" BorderBrush="#33FFFFFF" CornerRadius="6">
+        <ListBox x:Name="ResultList" Background="Transparent" BorderThickness="0">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="local:ListRow">
+              <StackPanel Margin="4,2">
+                <TextBlock Text="{Binding Title}" />
+                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="12"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+      <TextBlock Grid.Row="2" x:Name="LogPathText" Opacity="0.5" FontSize="12"
+                 Margin="0,8,0,0" TextTrimming="CharacterEllipsis" />
+    </Grid>
+
+    <!-- Buttons -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,16,0,0">
+      <Button x:Name="CancelButton" Content="Cancel" IsVisible="False" Click="OnCancel" />
+      <Button x:Name="UnlockButton" Content="Unlock" IsVisible="False" Click="OnUnlock" />
+      <Button x:Name="UnlockDeleteButton" Content="Unlock &amp; Delete" IsVisible="False"
+              Classes="accent" IsDefault="True" Click="OnUnlockAndDelete" />
+      <Button x:Name="DoneButton" Content="Done" IsVisible="False"
+              Classes="accent" Click="OnDone" />
+    </StackPanel>
+
+  </Grid>
+</Window>
