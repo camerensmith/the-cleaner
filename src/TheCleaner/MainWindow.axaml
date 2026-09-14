@@ -37,7 +37,7 @@
       <TextBlock x:Name="BusyText" Text="Scanning…" HorizontalAlignment="Center" Opacity="0.8" />
     </StackPanel>
 
-    <!-- Confirm -->
+    <!-- Confirm (lock scan) -->
     <Grid x:Name="ConfirmPanel" Grid.Row="1" IsVisible="False"
           RowDefinitions="Auto,Auto,Auto,*">
       <TextBlock Grid.Row="0" x:Name="TargetText"
@@ -59,6 +59,39 @@
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Grid>
+
+    <!-- Trace: program install footprint review -->
+    <Grid x:Name="TracePanel" Grid.Row="1" IsVisible="False"
+          RowDefinitions="Auto,Auto,*">
+      <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,8">
+        <TextBlock x:Name="TraceTargetText" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock x:Name="TraceSummaryText" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+      </StackPanel>
+      <Border Grid.Row="1" Background="#33FF6B4A" CornerRadius="6"
+              Padding="12,8" Margin="0,0,0,12">
+        <TextBlock TextWrapping="Wrap"
+                   Text="Everything checked below will be permanently removed. Uncheck any item to keep it." />
+      </Border>
+      <Border Grid.Row="2" BorderThickness="1" BorderBrush="#33FFFFFF" CornerRadius="6">
+        <ListBox x:Name="TraceList" Background="Transparent" BorderThickness="0">
+          <ListBox.DataTemplates>
+            <DataTemplate x:DataType="local:TraceHeaderRow">
+              <TextBlock Text="{Binding Label}" FontWeight="SemiBold" Opacity="0.85"
+                         Margin="4,6,4,2" FontSize="13" />
+            </DataTemplate>
+            <DataTemplate x:DataType="local:TraceItemRow">
+              <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="8,1">
+                <StackPanel>
+                  <TextBlock Text="{Binding Label}" />
+                  <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="12"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </CheckBox>
+            </DataTemplate>
+          </ListBox.DataTemplates>
         </ListBox>
       </Border>
     </Grid>
@@ -88,9 +121,13 @@
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
                 Spacing="8" Margin="0,16,0,0">
       <Button x:Name="CancelButton" Content="Cancel" IsVisible="False" Click="OnCancel" />
+      <Button x:Name="SwitchToLockScanButton" Content="Use lock scan instead"
+              IsVisible="False" Click="OnSwitchToLockScan" />
       <Button x:Name="UnlockButton" Content="Unlock" IsVisible="False" Click="OnUnlock" />
       <Button x:Name="UnlockDeleteButton" Content="Unlock &amp; Delete" IsVisible="False"
               Classes="accent" IsDefault="True" Click="OnUnlockAndDelete" />
+      <Button x:Name="DeepUninstallButton" Content="Deep Uninstall" IsVisible="False"
+              Classes="accent" IsDefault="True" Click="OnDeepUninstall" />
       <Button x:Name="DoneButton" Content="Done" IsVisible="False"
               Classes="accent" Click="OnDone" />
     </StackPanel>
