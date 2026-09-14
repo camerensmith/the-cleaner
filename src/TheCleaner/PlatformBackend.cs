@@ -18,6 +18,24 @@ internal static class PlatformBackend
             "No platform backend was compiled into this build of thecleaner.");
 #endif
 
+    /// <summary>Returns the install tracer for this platform, or <c>null</c> when
+    /// the feature is not supported on the current OS.</summary>
+    public static IInstallTracer? CreateInstallTracer() =>
+#if PLATFORM_WINDOWS
+        new TheCleaner.Windows.WindowsInstallTracer();
+#else
+        null;
+#endif
+
+    /// <summary>Returns the deep-uninstall backend for this platform, or <c>null</c>
+    /// when the feature is not supported on the current OS.</summary>
+    public static IDeepUninstallBackend? CreateDeepUninstallBackend() =>
+#if PLATFORM_WINDOWS
+        new TheCleaner.Windows.WindowsDeepUninstallBackend();
+#else
+        null;
+#endif
+
     /// <summary>True when this build can ask the OS to re-run it elevated.</summary>
     public static bool SupportsElevation =>
 #if PLATFORM_WINDOWS

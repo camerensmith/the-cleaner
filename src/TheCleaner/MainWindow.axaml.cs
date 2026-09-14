@@ -9,24 +9,45 @@ namespace TheCleaner;
 /// <summary>Row shown in the holder and result lists.</summary>
 public sealed record ListRow(string Title, string Detail);
 
+/// <summary>Category header row shown in the trace list.</summary>
+public sealed class TraceHeaderRow
+{
+    public string Label { get; set; } = string.Empty;
+}
+
+/// <summary>Individual item shown in the trace list; the user can uncheck it to exclude
+/// it from the deep uninstall.</summary>
+public sealed class TraceItemRow
+{
+    public string Category { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Detail { get; set; } = string.Empty;
+    public bool IsSelected { get; set; } = true;
+    /// <summary>The underlying value (file path, registry key, service name, etc.).</summary>
+    public string Value { get; set; } = string.Empty;
+}
+
 public partial class MainWindow : Window
 {
     private readonly CleanerService _service;
     private readonly RunLogger _logger = new(RunLogger.DefaultLogPath);
     private readonly CommandLineArgs _startup;
+    private readonly IInstallTracer? _installTracer;
+    private readonly IDeepUninstallBackend? _deepUninstallBackend;
 
     private ScanResult _scan = ScanResult.Empty;
+    private InstallFootprint _footprint = InstallFootprint.Empty;
+    private IReadOnlyList<string> _tracedPaths = [];
 
     public MainWindow() : this(CommandLineArgs.Parse([])) { }
 
     public MainWindow(CommandLineArgs startup)
     {
-        // Must be InitializeComponent, not AvaloniaXamlLoader.Load: the generated method
-        // also assigns the x:Name fields. Loading the XAML alone compiles fine and leaves
-        // every named control null.
         InitializeComponent();
         _startup = startup;
         _service = new CleanerService(PlatformBackend.Create());
+        _installTracer = PlatformBackend.CreateInstallTracer();
+        _deepUninstallBackend = PlatformBackend.CreateDeepUninstallBackend();
 
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -44,10 +65,6 @@ public partial class MainWindow : Window
 
         await ScanAndShowAsync(_startup.Paths);
 
-        // An elevated relaunch is the continuation of a run the user already confirmed
-        // and then approved at the UAC prompt, so it proceeds without asking again.
-        // Nothing else skips the confirm — a plain shell invocation carrying the same
-        // flags still stops here.
         if (_startup.Elevated
             && _startup.DeleteAfterUnlock is { } deleteAfter
             && ConfirmPanel.IsVisible)
@@ -67,10 +84,20 @@ public partial class MainWindow : Window
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
-        if (!ConfirmPanel.IsVisible && !BusyPanel.IsVisible)
+        if (ConfirmPanel.IsVisible || TracePanel.IsVisible || BusyPanel.IsVisible)
+            return;
+
+        var paths = ExtractPaths(e);
+        if (paths.Count == 0) return;
+
+        // For a single dropped item, try the install tracer first when available.
+        if (_installTracer is not null && paths.Count == 1)
         {
-            var paths = ExtractPaths(e);
-            if (paths.Count > 0) await ScanAndShowAsync(paths);
+            await TraceAndShowAsync(paths[0], paths);
+        }
+        else
+        {
+            await ScanAndShowAsync(paths);
         }
     }
 
@@ -88,7 +115,38 @@ public partial class MainWindow : Window
         return paths;
     }
 
-    // ---- scan -------------------------------------------------------------
+    // ---- trace (install footprint) ----------------------------------------
+
+    private async Task TraceAndShowAsync(string droppedPath, IReadOnlyList<string> paths)
+    {
+        ShowBusy("Tracing install footprint…");
+
+        InstallFootprint footprint;
+        try
+        {
+            footprint = await _installTracer!.TraceAsync(droppedPath, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.WriteError(ex.Message);
+            // Fall back to lock scan on trace error.
+            await ScanAndShowAsync(paths);
+            return;
+        }
+
+        if (!footprint.HasWork)
+        {
+            // No install footprint found — fall through to the lock scan.
+            await ScanAndShowAsync(paths);
+            return;
+        }
+
+        _footprint = footprint;
+        _tracedPaths = paths;
+        ShowTrace(footprint);
+    }
+
+    // ---- scan (lock finder) -----------------------------------------------
 
     private async Task ScanAndShowAsync(IReadOnlyList<string> paths)
     {
@@ -123,7 +181,7 @@ public partial class MainWindow : Window
         ShowConfirm(scan);
     }
 
-    // ---- run --------------------------------------------------------------
+    // ---- run (lock killer) ------------------------------------------------
 
     private void OnUnlock(object? sender, RoutedEventArgs e) => _ = RunAsync(deleteAfter: false);
 
@@ -132,6 +190,11 @@ public partial class MainWindow : Window
     private void OnCancel(object? sender, RoutedEventArgs e) => ShowIdle();
 
     private void OnDone(object? sender, RoutedEventArgs e) => ShowIdle();
+
+    private void OnSwitchToLockScan(object? sender, RoutedEventArgs e)
+    {
+        _ = ScanAndShowAsync(_tracedPaths.Count > 0 ? _tracedPaths : [_footprint.InstallRoot]);
+    }
 
     private async Task RunAsync(bool deleteAfter)
     {
@@ -156,7 +219,6 @@ public partial class MainWindow : Window
         {
             if (PlatformBackend.Relaunch(_scan.Roots, deleteAfter, out var error))
             {
-                // The elevated instance takes over from here.
                 Close();
                 return;
             }
@@ -169,20 +231,92 @@ public partial class MainWindow : Window
         ShowResults(result, extraNote: null);
     }
 
+    // ---- deep uninstall ---------------------------------------------------
+
+    private void OnDeepUninstall(object? sender, RoutedEventArgs e) => _ = RunDeepUninstallAsync();
+
+    private async Task RunDeepUninstallAsync()
+    {
+        ShowBusy("Deep uninstalling…");
+
+        var (footprint, options) = BuildFilteredFootprint();
+
+        DeepUninstallResult result;
+        try
+        {
+            var deepService = new DeepUninstallService(
+                PlatformBackend.Create(),
+                _deepUninstallBackend!);
+            result = await deepService.UninstallAsync(footprint, options, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.WriteError(ex.Message);
+            ShowFailure($"Deep uninstall failed: {ex.Message}");
+            return;
+        }
+
+        ShowDeepUninstallResults(result);
+    }
+
+    /// <summary>Reads the checked state of every <see cref="TraceItemRow"/> in
+    /// <see cref="TraceList"/> and produces a footprint and options that reflect only the
+    /// items the user kept selected.</summary>
+    private (InstallFootprint Footprint, InstallCleanOptions Options) BuildFilteredFootprint()
+    {
+        var items = TraceList.ItemsSource?.OfType<TraceItemRow>().ToList()
+                   ?? new List<TraceItemRow>();
+
+        var selected = items.Where(i => i.IsSelected).ToLookup(i => i.Category);
+
+        var dataPaths = selected["data"].Select(i => i.Value).ToList();
+        var regKeys = selected["registry"].Select(i => i.Value).ToList();
+        var services = selected["service"].Select(i => i.Value).ToList();
+        var tasks = selected["task"].Select(i => i.Value).ToList();
+        var startMenuShortcuts = selected["shortcut-start"].Select(i => i.Value).ToList();
+        var desktopShortcuts = selected["shortcut-desktop"].Select(i => i.Value).ToList();
+
+        var installRoot = selected["install"].Any()
+            ? _footprint.InstallRoot
+            : string.Empty;
+
+        var filtered = new InstallFootprint(
+            InstallRoot: installRoot,
+            AppName: _footprint.AppName,
+            ExePaths: _footprint.ExePaths,
+            DataPaths: dataPaths,
+            RegistryKeys: regKeys,
+            Services: services,
+            ScheduledTasks: tasks,
+            StartMenuShortcuts: startMenuShortcuts,
+            DesktopShortcuts: desktopShortcuts);
+
+        var options = new InstallCleanOptions(
+            IncludeUserData: dataPaths.Count > 0,
+            IncludeRegistry: regKeys.Count > 0,
+            IncludeServices: services.Count > 0,
+            IncludeTasks: tasks.Count > 0,
+            IncludeShortcuts: startMenuShortcuts.Count > 0 || desktopShortcuts.Count > 0);
+
+        return (filtered, options);
+    }
+
     // ---- view states ------------------------------------------------------
 
     private void ShowIdle()
     {
         SubtitleText.Text = "Drop a file or folder to see what is holding it.";
-        SetPanels(idle: true, busy: false, confirm: false, results: false);
-        SetButtons(cancel: false, unlock: false, unlockDelete: false, done: false);
+        SetPanels(idle: true, busy: false, confirm: false, trace: false, results: false);
+        SetButtons(cancel: false, switchScan: false, unlock: false, unlockDelete: false,
+                   deepUninstall: false, done: false);
     }
 
     private void ShowBusy(string message)
     {
         BusyText.Text = message;
-        SetPanels(idle: false, busy: true, confirm: false, results: false);
-        SetButtons(cancel: false, unlock: false, unlockDelete: false, done: false);
+        SetPanels(idle: false, busy: true, confirm: false, trace: false, results: false);
+        SetButtons(cancel: false, switchScan: false, unlock: false, unlockDelete: false,
+                   deepUninstall: false, done: false);
     }
 
     private void ShowConfirm(ScanResult scan)
@@ -212,9 +346,79 @@ public partial class MainWindow : Window
 
         HolderList.ItemsSource = rows;
 
-        SetPanels(idle: false, busy: false, confirm: true, results: false);
-        SetButtons(cancel: true, unlock: true, unlockDelete: true, done: false);
+        SetPanels(idle: false, busy: false, confirm: true, trace: false, results: false);
+        SetButtons(cancel: true, switchScan: false, unlock: true, unlockDelete: true,
+                   deepUninstall: false, done: false);
         UnlockDeleteButton.Focus();
+    }
+
+    private void ShowTrace(InstallFootprint footprint)
+    {
+        SubtitleText.Text = "Review all artifacts found, then choose an action.";
+        TraceTargetText.Text = $"{footprint.AppName}  —  {Middle(footprint.InstallRoot, 72)}";
+
+        var totalItems = footprint.DataPaths.Count + footprint.RegistryKeys.Count
+            + footprint.Services.Count + footprint.ScheduledTasks.Count
+            + footprint.StartMenuShortcuts.Count + footprint.DesktopShortcuts.Count;
+        TraceSummaryText.Text =
+            $"Install root + {totalItems} additional artifact(s) found across "
+            + $"{footprint.RegistryKeys.Count} registry key(s), "
+            + $"{footprint.Services.Count} service(s), "
+            + $"{footprint.ScheduledTasks.Count} task(s).";
+
+        var rows = new List<object>();
+
+        // Install root — always shown.
+        rows.Add(new TraceHeaderRow { Label = "📁 Install files" });
+        rows.Add(new TraceItemRow
+        {
+            Category = "install",
+            Label = Path.GetFileName(footprint.InstallRoot.TrimEnd('\\', '/')),
+            Detail = footprint.InstallRoot,
+            Value = footprint.InstallRoot,
+        });
+
+        AddCategory(rows, "🗂 User data", "data", footprint.DataPaths,
+            v => (Path.GetFileName(v.TrimEnd('\\', '/')), v));
+        AddCategory(rows, "🔑 Registry keys", "registry", footprint.RegistryKeys,
+            v => (TruncateMiddle(v, 64), string.Empty));
+        AddCategory(rows, "⚙️ Services", "service", footprint.Services,
+            v => (v, string.Empty));
+        AddCategory(rows, "📅 Scheduled tasks", "task", footprint.ScheduledTasks,
+            v => (v, string.Empty));
+        AddCategory(rows, "🔗 Start menu shortcuts", "shortcut-start", footprint.StartMenuShortcuts,
+            v => (Path.GetFileNameWithoutExtension(v), v));
+        AddCategory(rows, "🖥 Desktop shortcuts", "shortcut-desktop", footprint.DesktopShortcuts,
+            v => (Path.GetFileNameWithoutExtension(v), v));
+
+        TraceList.ItemsSource = rows;
+
+        SetPanels(idle: false, busy: false, confirm: false, trace: true, results: false);
+        SetButtons(cancel: true, switchScan: _installTracer is not null, unlock: false,
+                   unlockDelete: false, deepUninstall: true, done: false);
+        DeepUninstallButton.Focus();
+    }
+
+    private static void AddCategory<T>(
+        List<object> rows,
+        string header,
+        string category,
+        IReadOnlyList<T> items,
+        Func<string, (string Label, string Detail)> describe) where T : notnull
+    {
+        if (items.Count == 0) return;
+        rows.Add(new TraceHeaderRow { Label = $"{header} ({items.Count})" });
+        foreach (var item in items)
+        {
+            var (label, detail) = describe(item.ToString()!);
+            rows.Add(new TraceItemRow
+            {
+                Category = category,
+                Label = label,
+                Detail = detail,
+                Value = item.ToString()!,
+            });
+        }
     }
 
     private void ShowResults(KillResult result, string? extraNote)
@@ -238,8 +442,30 @@ public partial class MainWindow : Window
         ResultList.ItemsSource = rows;
         LogPathText.Text = $"Log: {RunLogger.DefaultLogPath}";
 
-        SetPanels(idle: false, busy: false, confirm: false, results: true);
-        SetButtons(cancel: false, unlock: false, unlockDelete: false, done: true);
+        SetPanels(idle: false, busy: false, confirm: false, trace: false, results: true);
+        SetButtons(cancel: false, switchScan: false, unlock: false, unlockDelete: false,
+                   deepUninstall: false, done: true);
+        DoneButton.Focus();
+    }
+
+    private void ShowDeepUninstallResults(DeepUninstallResult result)
+    {
+        SubtitleText.Text = "Deep uninstall complete.";
+        SummaryText.Text =
+            $"Files/dirs: {result.FilesDeleted} deleted, {result.FilesFailed} failed. "
+            + $"Registry: {result.RegistryKeysDeleted} deleted, {result.RegistryKeysFailed} failed. "
+            + $"Services: {result.ServicesDeleted} deleted, {result.ServicesFailed} failed. "
+            + $"Tasks: {result.TasksDeleted} deleted, {result.TasksFailed} failed.";
+
+        var rows = result.Errors.Select(e => new ListRow("Error", e)).ToList();
+        if (rows.Count == 0) rows.Add(new ListRow("No errors.", string.Empty));
+
+        ResultList.ItemsSource = rows;
+        LogPathText.Text = $"Log: {RunLogger.DefaultLogPath}";
+
+        SetPanels(idle: false, busy: false, confirm: false, trace: false, results: true);
+        SetButtons(cancel: false, switchScan: false, unlock: false, unlockDelete: false,
+                   deepUninstall: false, done: true);
         DoneButton.Focus();
     }
 
@@ -250,24 +476,30 @@ public partial class MainWindow : Window
         ResultList.ItemsSource = Array.Empty<ListRow>();
         LogPathText.Text = $"Log: {RunLogger.DefaultLogPath}";
 
-        SetPanels(idle: false, busy: false, confirm: false, results: true);
-        SetButtons(cancel: false, unlock: false, unlockDelete: false, done: true);
+        SetPanels(idle: false, busy: false, confirm: false, trace: false, results: true);
+        SetButtons(cancel: false, switchScan: false, unlock: false, unlockDelete: false,
+                   deepUninstall: false, done: true);
         DoneButton.Focus();
     }
 
-    private void SetPanels(bool idle, bool busy, bool confirm, bool results)
+    private void SetPanels(bool idle, bool busy, bool confirm, bool trace, bool results)
     {
         IdlePanel.IsVisible = idle;
         BusyPanel.IsVisible = busy;
         ConfirmPanel.IsVisible = confirm;
+        TracePanel.IsVisible = trace;
         ResultsPanel.IsVisible = results;
     }
 
-    private void SetButtons(bool cancel, bool unlock, bool unlockDelete, bool done)
+    private void SetButtons(
+        bool cancel, bool switchScan, bool unlock, bool unlockDelete,
+        bool deepUninstall, bool done)
     {
         CancelButton.IsVisible = cancel;
+        SwitchToLockScanButton.IsVisible = switchScan;
         UnlockButton.IsVisible = unlock;
         UnlockDeleteButton.IsVisible = unlockDelete;
+        DeepUninstallButton.IsVisible = deepUninstall;
         DoneButton.IsVisible = done;
     }
 
@@ -285,4 +517,6 @@ public partial class MainWindow : Window
         var keep = (max - 3) / 2;
         return text[..keep] + "..." + text[^keep..];
     }
+
+    private static string TruncateMiddle(string text, int max) => Middle(text, max);
 }
