@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>thecleaner</AssemblyName>
+    <RootNamespace>TheCleaner</RootNamespace>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Icon shown by Explorer and by a pinned taskbar shortcut: baked into the exe's
+         Win32 resources. The window/running-taskbar icon comes from the PNG below. -->
+    <ApplicationIcon>..\..\assets\cleaner.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- A genuine single file: the Skia/ANGLE natives go inside the exe. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- The platform backend is chosen by the MSBuild conditions below, a guarantee the
+         platform-compatibility analyzer cannot see. CA1416 would fire on every call into
+         the Windows backend even though that code only links on a Windows RID. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <!-- Compile-time backend selection: publish RID first, host OS when building
+       without one (plain `dotnet build` / `dotnet test`). -->
+  <PropertyGroup>
+    <CleanerPlatform Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">windows</CleanerPlatform>
+    <CleanerPlatform Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('linux'))">linux</CleanerPlatform>
+    <CleanerPlatform Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('osx'))">mac</CleanerPlatform>
+    <CleanerPlatform Condition="'$(CleanerPlatform)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">windows</CleanerPlatform>
+    <CleanerPlatform Condition="'$(CleanerPlatform)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">linux</CleanerPlatform>
+    <CleanerPlatform Condition="'$(CleanerPlatform)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">mac</CleanerPlatform>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CleanerPlatform)' == 'windows'">
+    <DefineConstants>$(DefineConstants);PLATFORM_WINDOWS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(CleanerPlatform)' == 'linux'">
+    <DefineConstants>$(DefineConstants);PLATFORM_LINUX</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(CleanerPlatform)' == 'mac'">
+    <DefineConstants>$(DefineConstants);PLATFORM_MAC</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TheCleaner.Core\TheCleaner.Core.csproj" />
+    <ProjectReference Include="..\TheCleaner.Windows\TheCleaner.Windows.csproj"
+                      Condition="'$(CleanerPlatform)' == 'windows'" />
+    <ProjectReference Include="..\TheCleaner.Linux\TheCleaner.Linux.csproj"
+                      Condition="'$(CleanerPlatform)' == 'linux'" />
+    <ProjectReference Include="..\TheCleaner.Mac\TheCleaner.Mac.csproj"
+                      Condition="'$(CleanerPlatform)' == 'mac'" />
+  </ItemGroup>
+
+  <!-- Linked rather than copied, so the repo keeps one canonical copy of the artwork.
+       Link sets the resource path, making the runtime URI /Assets/cleaner.png. -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\assets\cleaner.png" Link="Assets/cleaner.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TheCleaner.App.Tests" />
+  </ItemGroup>
+
+</Project>
